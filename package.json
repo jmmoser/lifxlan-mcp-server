@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "dev": "bun run --watch src/index.ts",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage"
@@ -20,6 +21,6 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "express": "^5.1.0",
-    "lifxlan": "^0.0.75"
+    "lifxlan": "^0.0.76"
   }
 }

@@ -6,7 +6,7 @@
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.12.1",
         "express": "^5.1.0",
-        "lifxlan": "^0.0.75",
+        "lifxlan": "^0.0.76",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -172,7 +172,7 @@
 
     "json-schema-traverse": ["json-schema-traverse@0.4.1", "", {}, "sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg=="],
 
-    "lifxlan": ["lifxlan@0.0.75", "", {}, "sha512-3lQgGJ9oHgn+BRMs0XU6P3XVhtGcGpHTFRlnvcJRrF8CjKZ+deVco1Il19ToUTwfLE7n4ZKKx7XNPMFBt0Qx9g=="],
+    "lifxlan": ["lifxlan@0.0.76", "", {}, "sha512-Yv0131iww7LThlXsf9IAA/q+HjcCKjt2LPnoo4SzMG9i1HwMjdyIohMDwY1tOdkPOlo8G6ZobTKms8stwY1SRg=="],
 
     "math-intrinsics": ["math-intrinsics@1.1.0", "", {}, "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g=="],
 

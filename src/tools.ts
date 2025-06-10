@@ -1,4 +1,4 @@
-import { Client, Router, Devices, GetServiceCommand, SetPowerCommand, SetColorCommand, GetPowerCommand, GetColorCommand } from 'lifxlan/index.js';
+import { Client, Router, Devices, GetServiceCommand, SetPowerCommand, SetColorCommand, GetPowerCommand, GetColorCommand, Device, GetLabelCommand, GetGroupCommand, Groups, type StateGroup } from 'lifxlan/index.js';
 import dgram from 'node:dgram';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -11,22 +11,53 @@ const router = Router({
   }
 });
 
-// Track discovered devices
-const deviceRegistry = new Map();
+type DeviceInfo = {
+  label?: string;
+  location?: string;
+  group?: StateGroup;
+  capabilities?: Record<string, any>;
+};
+
+const groups = Groups({
+  onAdded(group) {
+    console.log('Group added', group);
+  },
+  onChanged(group) {
+    console.log('Group changed', group);
+  },
+});
+
+const deviceRegistry = new Map<string, DeviceInfo>();
+
 const devices = Devices({
   onAdded(device) {
-    deviceRegistry.set(device.serialNumber, device);
+    const deviceInfo: DeviceInfo = {};
+    deviceRegistry.set(device.serialNumber, deviceInfo);
+
+    client
+      .send(GetLabelCommand(), device)
+      .then((label) => {
+        deviceInfo.label = label;
+        console.log(deviceInfo)
+      });
+
+    client
+      .send(GetGroupCommand(), device)
+      .then((group) => {
+        groups.register(device, group);
+        deviceInfo.group = group;
+        console.log(deviceInfo);
+      });
+
     console.log(`Device discovered: ${device.serialNumber} at ${device.address}:${device.port}`);
   }
 });
 
-// Handle incoming messages
 socket.on('message', (message, remote) => {
   const { header, serialNumber } = router.receive(message);
   devices.register(serialNumber, remote.port, remote.address, header.target);
 });
 
-// Start the socket
 await new Promise((resolve, reject) => {
   socket.once('error', reject);
   socket.once('listening', resolve);
@@ -37,9 +68,8 @@ socket.setBroadcast(true);
 
 const client = Client({ router });
 
-// Discover devices
 client.broadcast(GetServiceCommand());
-setInterval(() => {
+const discoverInterval = setInterval(() => {
   client.broadcast(GetServiceCommand());
 }, 5000);
 
@@ -57,7 +87,7 @@ export function createServer() {
   );
 
   const cleanup = async () => {
-    // Cleanup function for when the server shuts down
+    clearInterval(discoverInterval);
     socket.close();
   };
 
@@ -75,6 +105,14 @@ export function createServer() {
         {
           name: 'list_devices',
           description: 'List all discovered LIFX devices',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
+          name: 'list_groups',
+          description: 'List all discovered LIFX groups which devices belong to',
           inputSchema: {
             type: 'object',
             properties: {},
@@ -184,23 +222,36 @@ export function createServer() {
           content: [
             {
               type: 'text',
-              text: `Discovery broadcast sent. Found ${deviceRegistry.size} devices.`,
+              // text: `Discovery broadcast sent. Found ${deviceRegistry.size} devices.`,
+              text: JSON.stringify({
+                devices: Array.from(deviceRegistry.entries())
+              }),
             },
           ],
         };
       }
 
       case 'list_devices': {
-        const deviceList = Array.from(deviceRegistry.values()).map(device => ({
-          serialNumber: device.serialNumber,
-          address: device.address,
-          port: device.port,
-        }));
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(deviceList, null, 2),
+              text: JSON.stringify({
+                devices: Array.from(deviceRegistry.entries())
+              }),
+            },
+          ],
+        };
+      }
+
+      case 'list_groups': {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                groups: Array.from(groups.registered.entries())
+              }),
             },
           ],
         };
@@ -208,7 +259,7 @@ export function createServer() {
 
       case 'set_power': {
         const { serialNumber, power } = args as { serialNumber: string; power: boolean };
-        const device = deviceRegistry.get(serialNumber);
+        const device = await devices.get(serialNumber);
         if (!device) {
           throw new Error(`Device with serial number ${serialNumber} not found`);
         }
@@ -230,7 +281,7 @@ export function createServer() {
 
       case 'get_power': {
         const { serialNumber } = args as { serialNumber: string };
-        const device = deviceRegistry.get(serialNumber);
+        const device = await devices.get(serialNumber);
         if (!device) {
           throw new Error(`Device with serial number ${serialNumber} not found`);
         }
@@ -259,7 +310,7 @@ export function createServer() {
           kelvin: number;
           duration?: number;
         };
-        const device = deviceRegistry.get(serialNumber);
+        const device = await devices.get(serialNumber);
         if (!device) {
           throw new Error(`Device with serial number ${serialNumber} not found`);
         }
@@ -284,7 +335,7 @@ export function createServer() {
 
       case 'get_color': {
         const { serialNumber } = args as { serialNumber: string };
-        const device = deviceRegistry.get(serialNumber);
+        const device = await devices.get(serialNumber);
         if (!device) {
           throw new Error(`Device with serial number ${serialNumber} not found`);
         }

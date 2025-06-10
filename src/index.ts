@@ -1,8 +1,8 @@
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { InMemoryEventStore } from '@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js';
 import express from "express";
-import { createServer } from "./tools.js";
 import { randomUUID } from 'node:crypto';
+import { createServer } from "./tools.js";
 
 console.error('Starting Streamable HTTP server...');
 
@@ -151,7 +151,7 @@ app.delete('/mcp', async (req, res) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.error(`MCP Streamable HTTP Server listening on port ${PORT}`);
 });

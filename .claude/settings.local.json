@@ -5,7 +5,8 @@
       "mcp__ide__getDiagnostics",
       "Bash(bun run:*)",
       "Bash(bun test)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }
