@@ -1,0 +1,12 @@
+{
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "mcp__ide__getDiagnostics",
+      "Bash(bun run:*)",
+      "Bash(bun test)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}
