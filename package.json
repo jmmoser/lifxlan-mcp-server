@@ -22,6 +22,6 @@
     "@modelcontextprotocol/sdk": "^1.12.1",
     "express": "^5.1.0",
     "lifxlan": "^0.0.76",
-    "zod": "^3.25.58"
+    "zod": "^3.25.61"
   }
 }

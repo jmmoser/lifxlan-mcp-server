@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { Client, Router, Devices, GetServiceCommand, SetPowerCommand, SetColorCommand, GetPowerCommand, GetColorCommand, Device, GetLabelCommand, GetGroupCommand, Groups, type StateGroup } from 'lifxlan/index.js';
+import { Client, Router, Devices, GetServiceCommand, SetPowerCommand, SetColorCommand, GetPowerCommand, GetColorCommand, GetLabelCommand, GetGroupCommand, Groups, type StateGroup, GetLocationCommand, type StateLocation, type Color } from 'lifxlan/index.js';
 import dgram from 'node:dgram';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 // import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -15,8 +15,10 @@ const router = Router({
 
 type DeviceInfo = {
   label?: string;
-  location?: string;
+  location?: StateLocation;
   group?: StateGroup;
+  power?: 'on' | 'off' | 'unknown';
+  color?: Color;
   capabilities?: Record<string, any>;
 };
 
@@ -40,7 +42,6 @@ const devices = Devices({
       .send(GetLabelCommand(), device)
       .then((label) => {
         deviceInfo.label = label;
-        // console.log(deviceInfo)
       });
 
     client
@@ -48,15 +49,20 @@ const devices = Devices({
       .then((group) => {
         groups.register(device, group);
         deviceInfo.group = group;
-        // console.log(deviceInfo);
       });
 
-    Promise.all([
-      client.send(GetPowerCommand(), device).catch(() => null),
-      client.send(GetColorCommand(), device).catch(() => null)
-    ]).then(([power, color]) => {
-      console.log({ device, power, color })
-    });
+    client
+      .send(GetLocationCommand(), device)
+      .then((location) => {
+        deviceInfo.location = location;
+      });
+
+    client
+      .send(GetColorCommand(), device)
+      .then((color) => {
+        deviceInfo.color = color;
+        deviceInfo.power = color.power > 0 ? 'on' : 'off';
+      });
 
     // console.log(`Device discovered: ${device.serialNumber} at ${device.address}:${device.port}`);
   }
@@ -87,22 +93,14 @@ export function cleanup() {
   socket.close();
 }
 
-// Helper functions
-function parseSelector(selector: string = 'all') {
+function parseSelector(selector = 'all') {
   if (selector === 'all') {
     return { type: 'all' };
   }
-  
-  if (selector.startsWith('label:')) {
-    return { type: 'label', value: selector.substring(6) };
-  }
-  
-  if (selector.startsWith('group:')) {
-    return { type: 'group', value: selector.substring(6) };
-  }
-  
-  if (selector.startsWith('location:')) {
-    return { type: 'location', value: selector.substring(9) };
+
+  if (selector.includes(':')) {
+    const [type, value] = selector.split(':');
+    return { type, value };
   }
   
   // Assume it's a serial number if no prefix
@@ -220,6 +218,61 @@ async function getMatchingDevices(selector: string) {
   return matchingDevices;
 }
 
+const SelectorSchema = z.string().optional().default('all').describe("Optional selector to filter lights, e.g. 'all' (default), 'd073abcd1234' (a specific device's serial number), 'group:Living Room', 'location:Home'");
+
+// Schema definitions for implemented tools only
+const ListLightsSchema = z.object({
+  selector: SelectorSchema,
+});
+
+console.log(z.toJSONSchema(ListLightsSchema))
+console.log({
+  type: 'object',
+  properties: {
+    selector: {
+      type: 'string',
+      description: "Optional selector to filter lights (e.g., 'serial:d073abcd1234', 'group:Living Room', 'location:Home')",
+      default: 'all'
+    }
+  }
+});
+
+const SetPowerSchema = z.object({
+  selector: SelectorSchema,
+  power: z.enum(['on', 'off']),
+  duration: z.number().min(0).optional().default(1.0),
+});
+
+const SetBrightnessSchema = z.object({
+  selector: SelectorSchema,
+  brightness: z.number().min(0).max(1),
+  duration: z.number().min(0).optional().default(1.0),
+});
+
+const SetColorSchema = z.object({
+  selector: SelectorSchema,
+  color: z.union([
+    z.string(),
+    z.object({
+      hue: z.number().min(0).max(65535).optional(),
+      saturation: z.number().min(0).max(65535).optional(),
+      brightness: z.number().min(0).max(65535).optional(),
+      kelvin: z.number().int().min(1500).max(9000).optional(),
+    })
+  ]),
+  duration: z.number().min(0).optional().default(1.0),
+});
+
+const ToggleLightsSchema = z.object({
+  selector: SelectorSchema,
+  duration: z.number().min(0).optional().default(1.0),
+});
+
+const GetLightInfoSchema = z.object({
+  selector: SelectorSchema,
+  include_capabilities: z.boolean().optional().default(true),
+});
+
 export function createServer() {
   const server = new Server(
     {
@@ -233,47 +286,6 @@ export function createServer() {
     },
   );
 
-  // Schema definitions for implemented tools only
-  const ListLightsSchema = z.object({
-    selector: z.string().optional().default('all'),
-  });
-
-  const SetPowerSchema = z.object({
-    selector: z.string().optional().default('all'),
-    power: z.enum(['on', 'off']),
-    duration: z.number().min(0).optional().default(1.0),
-  });
-
-  const SetBrightnessSchema = z.object({
-    selector: z.string().optional().default('all'),
-    brightness: z.number().min(0).max(1),
-    duration: z.number().min(0).optional().default(1.0),
-  });
-
-  const SetColorSchema = z.object({
-    selector: z.string().optional().default('all'),
-    color: z.union([
-      z.string(),
-      z.object({
-        hue: z.number().min(0).max(360).optional(),
-        saturation: z.number().min(0).max(1).optional(),
-        brightness: z.number().min(0).max(1).optional(),
-        kelvin: z.number().int().min(1500).max(9000).optional(),
-      })
-    ]),
-    duration: z.number().min(0).optional().default(1.0),
-  });
-
-  const ToggleLightsSchema = z.object({
-    selector: z.string().optional().default('all'),
-    duration: z.number().min(0).optional().default(1.0),
-  });
-
-  const GetLightInfoSchema = z.object({
-    selector: z.string().optional().default('all'),
-    include_capabilities: z.boolean().optional().default(true),
-  });
-
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: [
       {
@@ -284,7 +296,7 @@ export function createServer() {
           properties: {
             selector: {
               type: 'string',
-              description: "Optional selector to filter lights (e.g., 'group:Living Room', 'location:Home')",
+              description: "Optional selector to filter lights (e.g., 'serial:d073abcd1234', 'group:Living Room', 'location:Home')",
               default: 'all'
             }
           }
