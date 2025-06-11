@@ -6,7 +6,8 @@
       "Bash(bun run:*)",
       "Bash(bun test)",
       "Bash(git add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": []
   }
