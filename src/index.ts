@@ -51,10 +51,12 @@ app.post('/mcp', async (req, res) => {
       // so responses can flow back through the same transport
       await server.connect(transport);
 
+      console.error(`New transport created for session ${transport.sessionId}`);
       await transport.handleRequest(req, res);
       return; // Already handled
     } else {
       // Invalid request - no session ID or not initialization request
+      console.error('Invalid request: No valid session ID provided');
       res.status(400).json({
         jsonrpc: '2.0',
         error: {
@@ -68,6 +70,7 @@ app.post('/mcp', async (req, res) => {
 
     // Handle the request with existing transport - no need to reconnect
     // The existing transport is already connected to the server
+    console.error(`Reusing existing transport for session ${transport.sessionId}`);
     await transport.handleRequest(req, res);
   } catch (error) {
     console.error('Error handling MCP request:', error);

@@ -14,9 +14,9 @@ bun install
 bun run index.ts
 ```
 
-**Development server with port override:**
+**Check types and run tests to validate changes**
 ```bash
-PORT=3001 bun run index.ts
+npx tsc && bun test
 ```
 
 ## Architecture Overview
