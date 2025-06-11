@@ -1,4 +1,5 @@
-import { z } from 'zod/v4';
+import { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import { Client, Router, Devices, GetServiceCommand, SetPowerCommand, SetColorCommand, GetPowerCommand, GetColorCommand, GetLabelCommand, GetGroupCommand, Groups, type StateGroup, GetLocationCommand, type StateLocation, type Color } from 'lifxlan/index.js';
 import dgram from 'node:dgram';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -218,29 +219,17 @@ async function getMatchingDevices(selector: string) {
   return matchingDevices;
 }
 
-const SelectorSchema = z.string().optional().default('all').describe("Optional selector to filter lights, e.g. 'all' (default), 'd073abcd1234' (a specific device's serial number), 'group:Living Room', 'location:Home'");
+const SelectorSchema = z.string().default('all').describe("Optional selector to filter lights, e.g. 'all' (default), 'd073abcd1234' (a specific device's serial number), 'group:Living Room', 'location:Home'");
 
-// Schema definitions for implemented tools only
 const ListLightsSchema = z.object({
   selector: SelectorSchema,
 });
 
-console.log(z.toJSONSchema(ListLightsSchema))
-console.log({
-  type: 'object',
-  properties: {
-    selector: {
-      type: 'string',
-      description: "Optional selector to filter lights (e.g., 'serial:d073abcd1234', 'group:Living Room', 'location:Home')",
-      default: 'all'
-    }
-  }
-});
+const ListLightsJSONSchema = zodToJsonSchema(ListLightsSchema);
 
-const SetPowerSchema = z.object({
+const SetLightsPowerSchema = z.object({
   selector: SelectorSchema,
   power: z.enum(['on', 'off']),
-  duration: z.number().min(0).optional().default(1.0),
 });
 
 const SetBrightnessSchema = z.object({
@@ -291,42 +280,12 @@ export function createServer() {
       {
         name: 'lifx_list_lights',
         description: 'List all available Lifx lights on the network with their current status and capabilities',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            selector: {
-              type: 'string',
-              description: "Optional selector to filter lights (e.g., 'serial:d073abcd1234', 'group:Living Room', 'location:Home')",
-              default: 'all'
-            }
-          }
-        }
+        inputSchema: ListLightsJSONSchema,
       },
       {
         name: 'lifx_set_power',
         description: 'Turn lights on or off',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            selector: {
-              type: 'string',
-              description: "Light selector (e.g., 'all', 'label:Bedroom Light', 'group:Kitchen')",
-              default: 'all'
-            },
-            power: {
-              type: 'string',
-              enum: ['on', 'off'],
-              description: 'Power state to set'
-            },
-            duration: {
-              type: 'number',
-              description: 'Transition duration in seconds',
-              default: 1.0,
-              minimum: 0
-            }
-          },
-          required: ['power']
-        }
+        inputSchema: SetLightsPowerSchema,
       },
       {
         name: 'lifx_set_brightness',
@@ -334,11 +293,7 @@ export function createServer() {
         inputSchema: {
           type: 'object',
           properties: {
-            selector: {
-              type: 'string',
-              description: 'Light selector',
-              default: 'all'
-            },
+            selector: SelectorSchema,
             brightness: {
               type: 'number',
               description: 'Brightness level (0.0 to 1.0)',
@@ -361,11 +316,7 @@ export function createServer() {
         inputSchema: {
           type: 'object',
           properties: {
-            selector: {
-              type: 'string',
-              description: 'Light selector',
-              default: 'all'
-            },
+            selector: SelectorSchema,
             color: {
               oneOf: [
                 {
@@ -376,22 +327,19 @@ export function createServer() {
                   type: 'object',
                   properties: {
                     hue: {
-                      type: 'number',
+                      type: 'integer',
                       minimum: 0,
-                      maximum: 360,
-                      description: 'Hue in degrees'
+                      maximum: 65535,
                     },
                     saturation: {
-                      type: 'number',
+                      type: 'integer',
                       minimum: 0,
-                      maximum: 1,
-                      description: 'Saturation (0.0 to 1.0)'
+                      maximum: 65535,
                     },
                     brightness: {
-                      type: 'number',
+                      type: 'integer',
                       minimum: 0,
-                      maximum: 1,
-                      description: 'Brightness (0.0 to 1.0)'
+                      maximum: 65535,
                     },
                     kelvin: {
                       type: 'integer',
@@ -405,10 +353,10 @@ export function createServer() {
               ]
             },
             duration: {
-              type: 'number',
-              description: 'Transition duration in seconds',
-              default: 1.0,
-              minimum: 0
+              type: 'integer',
+              description: 'Transition duration in millesconds',
+              default: 1000,
+              minimum: 0,
             }
           },
           required: ['color']
@@ -420,11 +368,7 @@ export function createServer() {
         inputSchema: {
           type: 'object',
           properties: {
-            selector: {
-              type: 'string',
-              description: 'Light selector',
-              default: 'all'
-            },
+            selector: SelectorSchema,
             duration: {
               type: 'number',
               description: 'Transition duration in seconds',
@@ -440,11 +384,7 @@ export function createServer() {
         inputSchema: {
           type: 'object',
           properties: {
-            selector: {
-              type: 'string',
-              description: 'Light selector',
-              default: 'all'
-            },
+            selector: SelectorSchema,
             include_capabilities: {
               type: 'boolean',
               description: 'Include light capabilities in response',
@@ -462,7 +402,7 @@ export function createServer() {
     switch (name) {
       case 'lifx_list_lights': {
         const { selector } = ListLightsSchema.parse(args);
-        const matchingDevices = await getMatchingDevices(selector);
+        const matchingDevices = await getMatchingDevices(args.selector as string);
         
         const lights = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => {
           try {
