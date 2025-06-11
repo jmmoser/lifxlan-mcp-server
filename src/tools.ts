@@ -236,33 +236,41 @@ const SetLightsPowerJSONSchema = zodToJsonSchema(SetLightsPowerSchema);
 
 const SetBrightnessSchema = z.object({
   selector: SelectorSchema,
-  brightness: z.number().min(0).max(1),
-  duration: z.number().min(0).optional().default(1.0),
+  brightness: z.number().min(0).max(1).describe("Brightness level (0.0 to 1.0)"),
+  duration: z.number().min(0).optional().default(1.0).describe("Transition duration in seconds"),
 });
+
+const SetBrightnessJSONSchema = zodToJsonSchema(SetBrightnessSchema);
 
 const SetColorSchema = z.object({
   selector: SelectorSchema,
   color: z.union([
-    z.string(),
+    z.string().describe("Color name (e.g., 'red', 'blue', 'warm_white') or hex code (e.g., '#FF0000')"),
     z.object({
-      hue: z.number().min(0).max(65535).optional(),
-      saturation: z.number().min(0).max(65535).optional(),
-      brightness: z.number().min(0).max(65535).optional(),
-      kelvin: z.number().int().min(1500).max(9000).optional(),
+      hue: z.number().int().min(0).max(65535).optional().describe("Hue value (0-65535)"),
+      saturation: z.number().int().min(0).max(65535).optional().describe("Saturation value (0-65535)"),
+      brightness: z.number().int().min(0).max(65535).optional().describe("Brightness value (0-65535)"),
+      kelvin: z.number().int().min(1500).max(9000).optional().describe("Color temperature in Kelvin"),
     })
-  ]),
-  duration: z.number().min(0).optional().default(1.0),
+  ]).describe("Color specification as string or HSBK object"),
+  duration: z.number().min(0).optional().default(1.0).describe("Transition duration in seconds"),
 });
+
+const SetColorJSONSchema = zodToJsonSchema(SetColorSchema);
 
 const ToggleLightsSchema = z.object({
   selector: SelectorSchema,
-  duration: z.number().min(0).optional().default(1.0),
+  duration: z.number().min(0).optional().default(1.0).describe("Transition duration in seconds"),
 });
 
-const GetLightInfoSchema = z.object({
-  selector: SelectorSchema,
-  include_capabilities: z.boolean().optional().default(true),
-});
+const ToggleLightsJSONSchema = zodToJsonSchema(ToggleLightsSchema);
+
+// const GetLightInfoSchema = z.object({
+//   selector: SelectorSchema,
+//   include_capabilities: z.boolean().optional().default(true).describe("Include light capabilities in response"),
+// });
+
+// const GetLightInfoJSONSchema = zodToJsonSchema(GetLightInfoSchema);
 
 export function createServer() {
   const server = new Server(
@@ -281,120 +289,34 @@ export function createServer() {
     tools: [
       {
         name: 'lifx_list_lights',
-        description: 'List all available Lifx lights on the network with their current status and capabilities',
+        description: 'List all available Lifx lights on the network with their current status, capabilities, power, and color',
         inputSchema: ListLightsJSONSchema,
       },
       {
-        name: 'lifx_set_power',
+        name: 'lifx_set_lights_power',
         description: 'Turn lights on or off',
         inputSchema: SetLightsPowerJSONSchema,
       },
       {
         name: 'lifx_set_brightness',
         description: 'Set the brightness of lights',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            selector: SelectorSchema,
-            brightness: {
-              type: 'number',
-              description: 'Brightness level (0.0 to 1.0)',
-              minimum: 0.0,
-              maximum: 1.0
-            },
-            duration: {
-              type: 'number',
-              description: 'Transition duration in seconds',
-              default: 1.0,
-              minimum: 0
-            }
-          },
-          required: ['brightness']
-        }
+        inputSchema: SetBrightnessJSONSchema,
       },
       {
         name: 'lifx_set_color',
         description: 'Set the color of lights using various color formats',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            selector: SelectorSchema,
-            color: {
-              oneOf: [
-                {
-                  type: 'string',
-                  description: "Color name (e.g., 'red', 'blue', 'warm_white') or hex code (e.g., '#FF0000')"
-                },
-                {
-                  type: 'object',
-                  properties: {
-                    hue: {
-                      type: 'integer',
-                      minimum: 0,
-                      maximum: 65535,
-                    },
-                    saturation: {
-                      type: 'integer',
-                      minimum: 0,
-                      maximum: 65535,
-                    },
-                    brightness: {
-                      type: 'integer',
-                      minimum: 0,
-                      maximum: 65535,
-                    },
-                    kelvin: {
-                      type: 'integer',
-                      minimum: 1500,
-                      maximum: 9000,
-                      description: 'Color temperature in Kelvin'
-                    }
-                  },
-                  additionalProperties: false
-                }
-              ]
-            },
-            duration: {
-              type: 'integer',
-              description: 'Transition duration in millesconds',
-              default: 1000,
-              minimum: 0,
-            }
-          },
-          required: ['color']
-        }
+        inputSchema: SetColorJSONSchema,
       },
       {
         name: 'lifx_toggle_lights',
         description: 'Toggle the power state of lights (on becomes off, off becomes on)',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            selector: SelectorSchema,
-            duration: {
-              type: 'number',
-              description: 'Transition duration in seconds',
-              default: 1.0,
-              minimum: 0
-            }
-          }
-        }
+        inputSchema: ToggleLightsJSONSchema,
       },
-      {
-        name: 'lifx_get_light_info',
-        description: 'Get detailed information about specific lights including capabilities, current state, and hardware info',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            selector: SelectorSchema,
-            include_capabilities: {
-              type: 'boolean',
-              description: 'Include light capabilities in response',
-              default: true
-            }
-          }
-        }
-      }
+      // {
+      //   name: 'lifx_get_light_info',
+      //   description: 'Get detailed information about specific lights including capabilities, current state, and hardware info',
+      //   inputSchema: GetLightInfoJSONSchema,
+      // }
     ],
   }));
 
@@ -408,29 +330,24 @@ export function createServer() {
         
         const lights = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => {
           try {
-            const [power, color] = await Promise.all([
-              client.send(GetPowerCommand(), device).catch((err) => {
-                console.warn(`Could not get power for ${serialNumber}:`, err);
-                return null;
-              }),
-              client.send(GetColorCommand(), device).catch((err) => {
-                console.warn(`Could not get color for ${serialNumber}:`, err);
-                return null;
-              }),
-            ]);
+            // const [power, color] = await Promise.all([
+            //   client.send(GetPowerCommand(), device).catch((err) => {
+            //     console.warn(`Could not get power for ${serialNumber}:`, err);
+            //     return null;
+            //   }),
+            //   client.send(GetColorCommand(), device).catch((err) => {
+            //     console.warn(`Could not get color for ${serialNumber}:`, err);
+            //     return null;
+            //   }),
+            // ]);
             
             return {
               serialNumber,
               label: info.label || 'Unknown',
               group: info.group?.label || 'No Group',
               location: info.location || 'No Location',
-              power: power != null ? (power > 0 ? 'on' : 'off') : 'unknown',
-              color: color ? {
-                hue: color.hue,
-                saturation: color.saturation,
-                brightness: color.brightness,
-                kelvin: color.kelvin,
-              } : null,
+              power: info.power,
+              color: info.power === 'on' ? info.color : undefined,
             };
           } catch (error) {
             return {
@@ -439,7 +356,7 @@ export function createServer() {
               group: info.group?.label || 'No Group',
               location: info.location || 'No Location',
               power: 'unknown',
-              color: null,
+              color: undefined,
               error: Error.isError(error) ? error.message : error,
             };
           }
@@ -453,13 +370,14 @@ export function createServer() {
         };
       }
 
-      case 'lifx_set_power': {
+      case 'lifx_set_lights_power': {
         const { selector, power } = SetLightsPowerSchema.parse(args);
         const matchingDevices = await getMatchingDevices(selector);
         
-        const results = await Promise.all(matchingDevices.map(async ({ device, serialNumber }) => {
+        const results = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => {
           try {
             await client.send(SetPowerCommand(power === 'on'), device);
+            info.power = power;
             return { serialNumber, success: true, power };
           } catch (error) {
             return { serialNumber, success: false, error: String(error) };
@@ -566,64 +484,59 @@ export function createServer() {
         };
       }
 
-      case 'lifx_get_light_info': {
-        const { selector, include_capabilities } = GetLightInfoSchema.parse(args);
-        const matchingDevices = await getMatchingDevices(selector);
+      // case 'lifx_get_light_info': {
+      //   const { selector, include_capabilities } = GetLightInfoSchema.parse(args);
+      //   const matchingDevices = await getMatchingDevices(selector);
         
-        const lights = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => {
-          try {
-            const [power, color] = await Promise.all([
-              client.send(GetPowerCommand(), device).catch(() => null),
-              client.send(GetColorCommand(), device).catch(() => null)
-            ]);
+      //   const lights = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => {
+      //     try {
+      //       const lightInfo = {
+      //         serialNumber,
+      //         label: info.label || 'Unknown',
+      //         group: info.group?.label || 'No Group',
+      //         location: info.location || 'No Location',
+      //         power: power ? (power > 0 ? 'on' : 'off') : 'unknown',
+      //         color: color ? {
+      //           hue: Math.round(color.hue / 182.04),
+      //           saturation: Math.round(color.saturation / 655.35) / 100,
+      //           brightness: Math.round(color.brightness / 655.35) / 100,
+      //           kelvin: color.kelvin
+      //         } : null,
+      //         connected: true,
+      //         address: device.address,
+      //         port: device.port
+      //       };
             
-            const lightInfo = {
-              serialNumber,
-              label: info.label || 'Unknown',
-              group: info.group?.label || 'No Group',
-              location: info.location || 'No Location',
-              power: power ? (power > 0 ? 'on' : 'off') : 'unknown',
-              color: color ? {
-                hue: Math.round(color.hue / 182.04),
-                saturation: Math.round(color.saturation / 655.35) / 100,
-                brightness: Math.round(color.brightness / 655.35) / 100,
-                kelvin: color.kelvin
-              } : null,
-              connected: true,
-              address: device.address,
-              port: device.port
-            };
+      //       if (include_capabilities) {
+      //         (lightInfo as any).capabilities = {
+      //           has_color: true,
+      //           has_variable_color_temp: true,
+      //           has_ir: false,
+      //           has_chain: false,
+      //           has_multizone: false,
+      //           min_kelvin: 1500,
+      //           max_kelvin: 9000
+      //         };
+      //       }
             
-            if (include_capabilities) {
-              (lightInfo as any).capabilities = {
-                has_color: true,
-                has_variable_color_temp: true,
-                has_ir: false,
-                has_chain: false,
-                has_multizone: false,
-                min_kelvin: 1500,
-                max_kelvin: 9000
-              };
-            }
-            
-            return lightInfo;
-          } catch (error) {
-            return {
-              serialNumber,
-              label: info.label || 'Unknown',
-              connected: false,
-              error: String(error)
-            };
-          }
-        }));
+      //       return lightInfo;
+      //     } catch (error) {
+      //       return {
+      //         serialNumber,
+      //         label: info.label || 'Unknown',
+      //         connected: false,
+      //         error: String(error)
+      //       };
+      //     }
+      //   }));
 
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({ lights }, null, 2)
-          }]
-        };
-      }
+      //   return {
+      //     content: [{
+      //       type: 'text',
+      //       text: JSON.stringify({ lights }, null, 2)
+      //     }]
+      //   };
+      // }
 
       default:
         throw new Error(`Tool ${name} not found`);
