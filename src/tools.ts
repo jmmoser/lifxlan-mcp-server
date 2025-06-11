@@ -232,6 +232,8 @@ const SetLightsPowerSchema = z.object({
   power: z.enum(['on', 'off']),
 });
 
+const SetLightsPowerJSONSchema = zodToJsonSchema(SetLightsPowerSchema);
+
 const SetBrightnessSchema = z.object({
   selector: SelectorSchema,
   brightness: z.number().min(0).max(1),
@@ -285,7 +287,7 @@ export function createServer() {
       {
         name: 'lifx_set_power',
         description: 'Turn lights on or off',
-        inputSchema: SetLightsPowerSchema,
+        inputSchema: SetLightsPowerJSONSchema,
       },
       {
         name: 'lifx_set_brightness',
@@ -402,7 +404,7 @@ export function createServer() {
     switch (name) {
       case 'lifx_list_lights': {
         const { selector } = ListLightsSchema.parse(args);
-        const matchingDevices = await getMatchingDevices(args.selector as string);
+        const matchingDevices = await getMatchingDevices(selector);
         
         const lights = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => {
           try {
@@ -452,12 +454,11 @@ export function createServer() {
       }
 
       case 'lifx_set_power': {
-        const { selector, power, duration } = SetPowerSchema.parse(args);
+        const { selector, power } = SetLightsPowerSchema.parse(args);
         const matchingDevices = await getMatchingDevices(selector);
         
         const results = await Promise.all(matchingDevices.map(async ({ device, serialNumber }) => {
           try {
-            const durationMs = Math.round(duration * 1000);
             await client.send(SetPowerCommand(power === 'on'), device);
             return { serialNumber, success: true, power };
           } catch (error) {
@@ -468,7 +469,7 @@ export function createServer() {
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({ results, selector, power }, null, 2)
+            text: JSON.stringify(results, null, 2)
           }]
         };
       }
