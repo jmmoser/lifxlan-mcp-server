@@ -22,7 +22,7 @@ app.post('/mcp', async (req, res) => {
       transport = transports.get(sessionId)!;
     } else if (!sessionId) {
 
-      const { server, cleanup } = createServer();
+      const { server } = createServer();
 
       // New initialization request
       const eventStore = new InMemoryEventStore();
@@ -39,12 +39,11 @@ app.post('/mcp', async (req, res) => {
 
 
       // Set up onclose handler to clean up transport when closed
-      server.onclose = async () => {
+      transport.onclose = async () => {
         const sid = transport.sessionId;
         if (sid && transports.has(sid)) {
           console.error(`Transport closed for session ${sid}, removing from transports map`);
           transports.delete(sid);
-          await cleanup();
         }
       };
 
