@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { Client, Router, Devices, GetServiceCommand, SetPowerCommand, SetColorCommand, GetPowerCommand, GetColorCommand, GetLabelCommand, GetGroupCommand, Groups, type StateGroup, GetLocationCommand, type StateLocation, type Color } from 'lifxlan/index.js';
+import { Client, Router, Devices, GetServiceCommand, SetPowerCommand, SetColorCommand, GetPowerCommand, GetColorCommand, GetLabelCommand, GetGroupCommand, Groups, type StateGroup, GetLocationCommand, type StateLocation, type Color, SetLightPowerCommand } from 'lifxlan/index.js';
 import dgram from 'node:dgram';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 // import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -221,6 +221,8 @@ async function getMatchingDevices(selector: string) {
 
 const SelectorSchema = z.string().default('all').describe("Optional selector to filter lights, e.g. 'all' (default), 'd073abcd1234' (a specific device's serial number), 'group:Living Room', 'location:Home'");
 
+const DurationSchema = z.number().min(0).optional().default(0).describe("Transition duration in milliseconds. Use 0 for immediate changes. Used for smooth transitions when changing power, brightness, or color of lights.");
+
 const ListLightsSchema = z.object({
   selector: SelectorSchema,
 });
@@ -230,6 +232,7 @@ const ListLightsJSONSchema = zodToJsonSchema(ListLightsSchema);
 const SetLightsPowerSchema = z.object({
   selector: SelectorSchema,
   power: z.enum(['on', 'off']),
+  duration: DurationSchema,
 });
 
 const SetLightsPowerJSONSchema = zodToJsonSchema(SetLightsPowerSchema);
@@ -237,7 +240,7 @@ const SetLightsPowerJSONSchema = zodToJsonSchema(SetLightsPowerSchema);
 const SetBrightnessSchema = z.object({
   selector: SelectorSchema,
   brightness: z.number().min(0).max(1).describe("Brightness level (0.0 to 1.0)"),
-  duration: z.number().min(0).optional().default(1.0).describe("Transition duration in seconds"),
+  duration: DurationSchema,
 });
 
 const SetBrightnessJSONSchema = zodToJsonSchema(SetBrightnessSchema);
@@ -245,7 +248,7 @@ const SetBrightnessJSONSchema = zodToJsonSchema(SetBrightnessSchema);
 const SetColorSchema = z.object({
   selector: SelectorSchema,
   color: z.union([
-    z.string().describe("Color name (e.g., 'red', 'blue', 'warm_white') or hex code (e.g., '#FF0000')"),
+    z.string().describe("Color name (e.g., 'red', 'blue', 'warm_white') or hex code (e.g., '#FF0000'). Turns lights on if they are off."),
     z.object({
       hue: z.number().int().min(0).max(65535).optional().describe("Hue value (0-65535)"),
       saturation: z.number().int().min(0).max(65535).optional().describe("Saturation value (0-65535)"),
@@ -253,24 +256,10 @@ const SetColorSchema = z.object({
       kelvin: z.number().int().min(1500).max(9000).optional().describe("Color temperature in Kelvin"),
     })
   ]).describe("Color specification as string or HSBK object"),
-  duration: z.number().min(0).optional().default(1.0).describe("Transition duration in seconds"),
+  duration: DurationSchema,
 });
 
 const SetColorJSONSchema = zodToJsonSchema(SetColorSchema);
-
-const ToggleLightsSchema = z.object({
-  selector: SelectorSchema,
-  duration: z.number().min(0).optional().default(1.0).describe("Transition duration in seconds"),
-});
-
-const ToggleLightsJSONSchema = zodToJsonSchema(ToggleLightsSchema);
-
-// const GetLightInfoSchema = z.object({
-//   selector: SelectorSchema,
-//   include_capabilities: z.boolean().optional().default(true).describe("Include light capabilities in response"),
-// });
-
-// const GetLightInfoJSONSchema = zodToJsonSchema(GetLightInfoSchema);
 
 export function createServer() {
   const server = new Server(
@@ -288,35 +277,25 @@ export function createServer() {
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: [
       {
-        name: 'lifx_list_lights',
+        name: 'list_lights',
         description: 'List all available Lifx lights on the network with their current status, capabilities, power, and color',
         inputSchema: ListLightsJSONSchema,
       },
       {
-        name: 'lifx_set_lights_power',
+        name: 'set_lights_power',
         description: 'Turn lights on or off',
         inputSchema: SetLightsPowerJSONSchema,
       },
       {
-        name: 'lifx_set_brightness',
+        name: 'set_lights_brightness',
         description: 'Set the brightness of lights',
         inputSchema: SetBrightnessJSONSchema,
       },
       {
-        name: 'lifx_set_color',
+        name: 'set_lights_color',
         description: 'Set the color of lights using various color formats',
         inputSchema: SetColorJSONSchema,
       },
-      {
-        name: 'lifx_toggle_lights',
-        description: 'Toggle the power state of lights (on becomes off, off becomes on)',
-        inputSchema: ToggleLightsJSONSchema,
-      },
-      // {
-      //   name: 'lifx_get_light_info',
-      //   description: 'Get detailed information about specific lights including capabilities, current state, and hardware info',
-      //   inputSchema: GetLightInfoJSONSchema,
-      // }
     ],
   }));
 
@@ -324,43 +303,18 @@ export function createServer() {
     const { name, arguments: args } = request.params;
 
     switch (name) {
-      case 'lifx_list_lights': {
+      case 'list_lights': {
         const { selector } = ListLightsSchema.parse(args);
         const matchingDevices = await getMatchingDevices(selector);
         
-        const lights = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => {
-          try {
-            // const [power, color] = await Promise.all([
-            //   client.send(GetPowerCommand(), device).catch((err) => {
-            //     console.warn(`Could not get power for ${serialNumber}:`, err);
-            //     return null;
-            //   }),
-            //   client.send(GetColorCommand(), device).catch((err) => {
-            //     console.warn(`Could not get color for ${serialNumber}:`, err);
-            //     return null;
-            //   }),
-            // ]);
-            
-            return {
-              serialNumber,
-              label: info.label || 'Unknown',
-              group: info.group?.label || 'No Group',
-              location: info.location || 'No Location',
-              power: info.power,
-              color: info.power === 'on' ? info.color : undefined,
-            };
-          } catch (error) {
-            return {
-              serialNumber,
-              label: info.label || 'Unknown',
-              group: info.group?.label || 'No Group',
-              location: info.location || 'No Location',
-              power: 'unknown',
-              color: undefined,
-              error: Error.isError(error) ? error.message : error,
-            };
-          }
-        }));
+        const lights = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => ({
+          serialNumber,
+          label: info.label || 'Unknown',
+          group: info.group?.label || 'No Group',
+          location: info.location || 'No Location',
+          power: info.power,
+          color: info.power === 'on' ? info.color : undefined,
+        })));
 
         return {
           content: [{
@@ -370,13 +324,13 @@ export function createServer() {
         };
       }
 
-      case 'lifx_set_lights_power': {
-        const { selector, power } = SetLightsPowerSchema.parse(args);
+      case 'set_lights_power': {
+        const { selector, power, duration } = SetLightsPowerSchema.parse(args);
         const matchingDevices = await getMatchingDevices(selector);
         
         const results = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => {
           try {
-            await client.send(SetPowerCommand(power === 'on'), device);
+            await client.send(SetLightPowerCommand(power === 'on', duration), device);
             info.power = power;
             return { serialNumber, success: true, power };
           } catch (error) {
@@ -392,7 +346,7 @@ export function createServer() {
         };
       }
 
-      case 'lifx_set_brightness': {
+      case 'set_lights_brightness': {
         const { selector, brightness, duration } = SetBrightnessSchema.parse(args);
         const matchingDevices = await getMatchingDevices(selector);
         
@@ -424,7 +378,7 @@ export function createServer() {
         };
       }
 
-      case 'lifx_set_color': {
+      case 'set_lights_color': {
         const { selector, color, duration } = SetColorSchema.parse(args);
         const matchingDevices = await getMatchingDevices(selector);
         const parsedColor = parseColor(color);
@@ -453,90 +407,6 @@ export function createServer() {
           }]
         };
       }
-
-      case 'lifx_toggle_lights': {
-        const { selector, duration } = ToggleLightsSchema.parse(args);
-        const matchingDevices = await getMatchingDevices(selector);
-        
-        const results = await Promise.all(matchingDevices.map(async ({ device, serialNumber }) => {
-          try {
-            const currentPower = await client.send(GetPowerCommand(), device);
-            const newPowerState = currentPower === 0;
-            
-            await client.send(SetPowerCommand(newPowerState), device);
-            
-            return { 
-              serialNumber, 
-              success: true, 
-              previous_state: currentPower > 0 ? 'on' : 'off',
-              new_state: newPowerState ? 'on' : 'off'
-            };
-          } catch (error) {
-            return { serialNumber, success: false, error: String(error) };
-          }
-        }));
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({ results, selector }, null, 2)
-          }]
-        };
-      }
-
-      // case 'lifx_get_light_info': {
-      //   const { selector, include_capabilities } = GetLightInfoSchema.parse(args);
-      //   const matchingDevices = await getMatchingDevices(selector);
-        
-      //   const lights = await Promise.all(matchingDevices.map(async ({ device, serialNumber, info }) => {
-      //     try {
-      //       const lightInfo = {
-      //         serialNumber,
-      //         label: info.label || 'Unknown',
-      //         group: info.group?.label || 'No Group',
-      //         location: info.location || 'No Location',
-      //         power: power ? (power > 0 ? 'on' : 'off') : 'unknown',
-      //         color: color ? {
-      //           hue: Math.round(color.hue / 182.04),
-      //           saturation: Math.round(color.saturation / 655.35) / 100,
-      //           brightness: Math.round(color.brightness / 655.35) / 100,
-      //           kelvin: color.kelvin
-      //         } : null,
-      //         connected: true,
-      //         address: device.address,
-      //         port: device.port
-      //       };
-            
-      //       if (include_capabilities) {
-      //         (lightInfo as any).capabilities = {
-      //           has_color: true,
-      //           has_variable_color_temp: true,
-      //           has_ir: false,
-      //           has_chain: false,
-      //           has_multizone: false,
-      //           min_kelvin: 1500,
-      //           max_kelvin: 9000
-      //         };
-      //       }
-            
-      //       return lightInfo;
-      //     } catch (error) {
-      //       return {
-      //         serialNumber,
-      //         label: info.label || 'Unknown',
-      //         connected: false,
-      //         error: String(error)
-      //       };
-      //     }
-      //   }));
-
-      //   return {
-      //     content: [{
-      //       type: 'text',
-      //       text: JSON.stringify({ lights }, null, 2)
-      //     }]
-      //   };
-      // }
 
       default:
         throw new Error(`Tool ${name} not found`);
