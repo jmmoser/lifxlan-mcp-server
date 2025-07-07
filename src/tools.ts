@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { Client, Router, Devices, GetServiceCommand, SetPowerCommand, SetColorCommand, GetPowerCommand, GetColorCommand, GetLabelCommand, GetGroupCommand, Groups, type StateGroup, GetLocationCommand, type StateLocation, type Color, SetLightPowerCommand } from 'lifxlan/index.js';
+import { Client, Router, Devices, GetServiceCommand, SetColorCommand, GetColorCommand, GetLabelCommand, GetGroupCommand, Groups, type StateGroup, GetLocationCommand, type StateLocation, type Color, SetLightPowerCommand } from 'lifxlan/index.js';
 import dgram from 'node:dgram';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 // import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -38,6 +38,8 @@ const devices = Devices({
   onAdded(device) {
     const deviceInfo: DeviceInfo = {};
     deviceRegistry.set(device.serialNumber, deviceInfo);
+
+    console.log(device);
 
     client
       .send(GetLabelCommand(), device)
@@ -85,6 +87,9 @@ socket.setBroadcast(true);
 const client = Client({ router });
 
 client.broadcast(GetServiceCommand());
+setTimeout(() => {
+  client.broadcast(GetServiceCommand());
+}, 1000);
 const discoverInterval = setInterval(() => {
   client.broadcast(GetServiceCommand());
 }, 5000);

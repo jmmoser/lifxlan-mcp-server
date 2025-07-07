@@ -10,7 +10,7 @@
     "test:coverage": "bun test --coverage"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "^1.2.15",
     "@types/express": "^5.0.3",
     "supertest": "^7.0.0",
     "@types/supertest": "^6.0.2"
@@ -19,10 +19,10 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.15.0",
     "express": "^5.1.0",
-    "lifxlan": "^0.0.76",
-    "zod": "^3.25.62",
-    "zod-to-json-schema": "^3.24.5"
+    "lifxlan": "^0.0.82",
+    "zod": "^3.25.74",
+    "zod-to-json-schema": "^3.24.6"
   }
 }
